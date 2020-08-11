@@ -11,15 +11,17 @@ const sample5 = require("../data/BreweriesSample5.json");
 const samples = { masterSample, sample1, sample2, sample3, sample4, sample5 };
 
 describe("Test deep equality", () => {
-  it("equal objects with different key order should return 1", () => {
+  it("equal objects with different key order should be penalized", () => {
     const obj1 = { key1: "key1", key2: "key2", key3: "key3" };
     const obj2 = { key2: "key2", key1: "key1", key3: "key3" };
     const result = compare(obj1, obj2);
-    expect(result).to.equal(1);
+    console.log(`Score: ${result}`);
+    expect(result).to.be.within(0, 1);
   });
 
   it("equal objects should return 1", () => {
     const result = compare({ ...masterSample }, { ...masterSample });
+    console.log(`Score: ${result}`);
     expect(result).to.equal(1);
   });
 });

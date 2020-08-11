@@ -1,9 +1,18 @@
 import * as dotenv from "dotenv";
 dotenv.config({ path: `${__dirname}/.env` });
 
-interface Result {
-  maxPoints: number;
-  points: number;
+class Result {
+  public maxPoints = 0;
+  public points = 0;
+
+  public addResult(result: Result, divisor: number = 1) {
+    this.points += result.points / divisor;
+    this.maxPoints += result.maxPoints;
+  }
+
+  public score() {
+    return this.points / this.maxPoints;
+  }
 }
 
 interface JSONObject<T> {
@@ -20,91 +29,98 @@ export function compare(
     return 1;
   }
   log("Objects are different");
-  const result = compare_objects(obj1, obj2);
-  return result.points / result.maxPoints;
+  return compareObjects(obj1, obj2).score();
 }
 
-function compare_objects(
+function compareObjects(
   obj1: JSONObject<Object>,
   obj2: JSONObject<Object>
 ): Result {
   const keys1 = Object.keys(obj1);
   const keys2 = Object.keys(obj2);
   const uniqueKeys = new Set(keys1.concat(keys2));
-  return [...uniqueKeys].reduce(
-    (result, key) => {
-      if (keys1.includes(key) && keys2.includes(key)) {
-        const comparisonResult = compareTypes(obj1[key], obj2[key]);
-        result.points += comparisonResult.points;
-        result.maxPoints += comparisonResult.maxPoints;
-      } else {
-        // If the key is not present in both objects, traverse one object to count the differences
-        if (keys1.includes(key)) {
-          const comparisonResult = compareTypes(obj1[key], {});
-          result.points += comparisonResult.points;
-          result.maxPoints += comparisonResult.maxPoints;
-        } else {
-          const comparisonResult = compareTypes(obj2[key], {});
-          result.points += comparisonResult.points;
-          result.maxPoints += comparisonResult.maxPoints;
-        }
-        // increment max score
-        result.maxPoints++;
+  return [...uniqueKeys].reduce((result, key) => {
+    if (keys1.includes(key) && keys2.includes(key)) {
+      // Penalize position mismatch by a divisor
+      const mismatchDivisor =
+        keys1.findIndex((value) => value === key) ===
+        keys2.findIndex((value) => value === key)
+          ? 1
+          : 2;
+      if (mismatchDivisor > 1) {
+        log(`[-] Penalizing position mismatch in key: ${key}`);
       }
-      return result;
-    },
-    { points: 0, maxPoints: 0 } as Result
-  );
+      result.addResult(compareTypes(obj1[key], obj2[key]), mismatchDivisor);
+    } else {
+      // If the key is not present in both objects, traverse one object to count the differences
+      const comparisonResult = keys1.includes(key)
+        ? compareTypes(obj1[key], {})
+        : compareTypes(obj2[key], {});
+      // increment max score
+      result.addResult(comparisonResult);
+    }
+    log(result);
+    return result;
+  }, new Result());
 }
 
 function compareTypes<T>(type1: T, type2: T): Result {
-  const result = { points: 0, maxPoints: 0 } as Result;
+  const result = new Result();
   // If you are both objects, but different in the inside
   if (typeof type1 === "object" && typeof type2 === "object") {
     if (Array.isArray(type1) && Array.isArray(type2)) {
       // If you are both arrays
-      const comparingResult = compareArrays(type1, type2);
-      result.points += comparingResult.points;
-      result.maxPoints += comparingResult.maxPoints;
+      result.addResult(compareArrays(type1, type2));
     } else {
       log(`Comparing objects: ${typeof type1} vs ${typeof type2}`);
-      const comparingResult = compare_objects(type1 || {}, type2 || {});
-      result.points += comparingResult.points;
-      result.maxPoints += comparingResult.maxPoints;
+      result.addResult(compareObjects(type1 || {}, type2 || {}));
     }
   } else {
-    log("Comparing other types ->");
-    let equal = false;
-    if (type1 === type2) {
-      equal = true;
-      result.points++;
-    }
-    log(`${type1}<${typeof type1}> === ${type2}<${typeof type2}>: ${equal}`);
-    result.maxPoints++;
+    result.addResult(compareMismatchesAndPrimitives(type1, type2));
   }
 
+  return result;
+}
+
+function compareMismatchesAndPrimitives<T>(prim1: T, prim2: T): Result {
+  log("Comparing primitives and mismatches ->");
+  const result = new Result();
+  result.maxPoints = 1;
+  let grade;
+
+  if (prim1 === prim2) {
+    result.points = 1;
+    grade = "equal";
+  } else if (prim1 == prim2) {
+    result.points = 0.5;
+    grade = "equivalent";
+  }
+
+  log(`${prim1}<${typeof prim1}> === ${prim2}<${typeof prim2}>: ${grade}`);
   return result;
 }
 
 function compareArrays<T>(arr1: T[], arr2: T[]): Result {
   const maxSize = Math.max(arr1.length, arr2.length);
   log(`Comparing arrays of maxSize: ${maxSize} ->`);
-  const result = { points: 0, maxPoints: 0 } as Result;
+  const result = new Result();
 
-  Array.from({ length: maxSize }, (v, k) => k).forEach((index) => {
+  Array.from({ length: maxSize }, (v, i) => i).forEach((index) => {
     log(`Comparing array item -> ${index} `);
-    const comparingResult = compare_objects(
-      arr1[index] || {},
-      arr2[index] || {}
-    );
-    result.points += comparingResult.points;
-    result.maxPoints += comparingResult.maxPoints;
+
+    if (typeof arr1[index] === "object" || typeof arr2[index] === "object") {
+      result.addResult(compareObjects(arr1[index] || {}, arr2[index] || {}));
+    } else {
+      result.addResult(
+        compareMismatchesAndPrimitives(arr1[index], arr2[index])
+      );
+    }
   });
 
   return result;
 }
 
-function log(message: string) {
+function log<T>(message: T) {
   if (process.env.VERBOSE === "true") {
     console.log(message);
   }
